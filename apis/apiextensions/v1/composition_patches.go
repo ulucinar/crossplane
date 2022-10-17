@@ -24,6 +24,8 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
+
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 )
@@ -39,6 +41,8 @@ const (
 	errFmtCombineConfigMissing        = "given combine strategy %s requires configuration"
 	errFmtCombineStrategyFailed       = "%s strategy could not combine"
 	errFmtExpandingArrayFieldPaths    = "cannot expand ToFieldPath %s"
+
+	errNilConnectionDetailsLastPublishedTime = "connection details last published time cannot be nil"
 )
 
 // A PatchType is a type of patch.
@@ -122,6 +126,9 @@ type Patch struct {
 func (c *Patch) Apply(cp, cd runtime.Object, only ...PatchType) error {
 	if c.filterPatch(only...) {
 		return nil
+	}
+	if c, ok := cp.(resource.Composite); !ok || c.GetConnectionDetailsLastPublishedTime() == nil {
+		return errors.New(errNilConnectionDetailsLastPublishedTime)
 	}
 
 	switch c.Type {
