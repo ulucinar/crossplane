@@ -18,6 +18,7 @@ package composite
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +46,8 @@ const (
 	errGetComposed   = "cannot get composed resource"
 	errGCComposed    = "cannot garbage collect composed resource"
 	errApplyComposed = "cannot apply composed resource"
+	errApplyOption   = "cannot apply option to composed resource"
+	errMarshal       = "cannot marshal composed resource into JSON"
 	errFetchDetails  = "cannot fetch connection details"
 	errInline        = "cannot inline Composition patch sets"
 
@@ -271,7 +274,17 @@ func (c *PTComposer) Compose(ctx context.Context, xr *composite.Unstructured, re
 
 		o := []resource.ApplyOption{resource.MustBeControllableBy(xr.GetUID()), usage.RespectOwnerRefs()}
 		o = append(o, mergeOptions(filterPatches(t.Patches, patchTypesFromXR()...))...)
-		if err := c.client.Apply(ctx, cd, o...); err != nil {
+		desired := cd.DeepCopyObject()
+		for _, opt := range o {
+			if err := opt(ctx, cd, desired); err != nil {
+				return CompositionResult{}, errors.Wrap(err, errApplyOption)
+			}
+		}
+		patch, err := json.Marshal(desired)
+		if err != nil {
+			return CompositionResult{}, errors.Wrap(err, errMarshal)
+		}
+		if err := c.client.Patch(ctx, cd, client.RawPatch(types.ApplyPatchType, patch), client.FieldOwner(FieldOwnerComposed), client.ForceOwnership); err != nil {
 			// TODO(negz): Include the template name (if any) in this error.
 			// Including the rendered resource's kind may help too (e.g. if the
 			// template is anonymous).
